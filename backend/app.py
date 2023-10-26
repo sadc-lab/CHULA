@@ -20,7 +20,21 @@ engine = create_engine(DATABASE_URL)
 conn = engine.connect()  # Créez une connexion
 
 #EXCEL_PATH = "/home/melvinberto/VsCodeProjects/CHULA/backend/patients_CHLA.xlsx"
-
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    html_content = """
+    <html>
+        <head>
+            <title>Bienvenue</title>
+        </head>
+        <body>
+            <h2>Bienvenue sur notre site</h2>
+            <p>Si vous souhaitez exécuter une requête, veuillez cliquer sur le lien ci-dessous.</p>
+            <a href="/execute_query/">Exécuter la requête</a>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 @app.get("/")
 def execute_sql_query():
     #df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
