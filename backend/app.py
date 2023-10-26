@@ -1,9 +1,11 @@
+#trouver creation StudyID ou faire code anonymisation et ajouter frequence de 5min
 import os
 from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse
 from sqlalchemy import create_engine, text
 import pandas as pd
 from dotenv import load_dotenv
+import json
 
 # Chargez les variables d'environnement du fichier .env
 load_dotenv()
@@ -13,34 +15,19 @@ app = FastAPI()
 
 USERNAME = os.getenv("SQL_USER")
 PASSWORD = os.getenv("SQL_PASSWORD")
-
-# Format du DATABASE_URL: "postgresql://username:password@host:port/dbname"
-DATABASE_URL = f"postgresql://{USERNAME}:{PASSWORD}@localhost:5432/cathydb"
-
+DATABASE_URL = f"postgresql://{USERNAME}:{PASSWORD}@spxp-app05:5432/cathydb"
 engine = create_engine(DATABASE_URL)
+conn = engine.connect()  # Créez une connexion
 
-@app.get("/", response_class=HTMLResponse)
-def read_root():
-    html_content = """
-    <html>
-        <head>
-            <title>Bienvenue</title>
-        </head>
-        <body>
-            <h2>Bienvenue sur notre site</h2>
-            <p>Si vous souhaitez exécuter une requête, veuillez cliquer sur le lien ci-dessous.</p>
-            <a href="/execute_query/">Exécuter la requête</a>
-        </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+#EXCEL_PATH = "/home/melvinberto/VsCodeProjects/CHULA/backend/patients_CHLA.xlsx"
 
-@app.post("/execute_query/")
-def execute_sql_query(adm: str):
-    
-    adm_str = ",".join(adm.split(";"))
+@app.get("/")
+def execute_sql_query():
+    #df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
+    adm_str=000000
 
-    sqlcmd = f"""Select Patient, 
+
+    sqlcmd = f'''SELECT Patient, 
     min(minimumTime) minimumTime,
     percentile_cont(0.5) within group (order by spo2) spo2,
     percentile_cont(0.5) within group (order by resp_rate) resp_rate,
@@ -101,13 +88,13 @@ SELECT l.encounterid AS Patient,
      WHERE p.par IN ('SpO2','Measured Frequency','FC','PEEP Setting','PEEP réglée','PEEP reglee','O2 Concentration measured','O2 Concentration Setting','Mean Airway Pressure','Peak Airway Pressure'
       , 'Mean airway pressure','Tidal Volume Setting','Expiratory Tidal Volume','Inspiratory Time Setting','P0.1 Airway Pressure','CMV frequency Setting','CO2fe','Pression de crête','Inspired O2 (FiO2) Setting','Positive End Expiratory Pressure (PEEP) Setting','Measured Frequency')
       AND p.horodate BETWEEN (NOW()- interval '8 minutes') AND NOW()
-      AND l.lifetimenumber IN ({adm_str})
-      GROUP BY l.encounterid, p.horodate, b.horodate 
-            ) x
-      GROUP BY Patient, BloodGasTime;")""".replace(",adm,", f"IN ({adm_str})")
+      AND (l.lifetimenumber= ANY(array[{adm_str}]::text[]))
+      GROUP BY l.encounterid, p.horodate, b.horodate
+      ) x
+      GROUP BY Patient, BloodGasTime;'''
 
-    result = engine.execute(text(sqlcmd))
+    result = conn.execute(text(sqlcmd))
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
-    # Convertir le DataFrame en JSON
-    return final_df.to_dict(orient="records")
+    json_data = json.dumps(final_df.to_dict(orient="records"))
+    return json_data
