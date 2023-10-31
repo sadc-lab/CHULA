@@ -127,10 +127,11 @@ SELECT l.encounterid AS Patient,
       GROUP BY l.encounterid, p.horodate, b.horodate
       ) x
       GROUP BY Patient, BloodGasTime;'''
+   
     # Exécution de la requête
     result = conn.execute(text(sqlcmd), {'adm_str': adm_str})
     logger.info("Requête SQL exécutée avec succès")
-    
+
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
     logger.info("Résultats convertis en DataFrame")
 
@@ -141,6 +142,7 @@ SELECT l.encounterid AS Patient,
     logger.info("Colonnes Timestamp converties en chaînes de caractères")
 
     # Retourner les données en format JSON
-    json_data = json.dumps(final_df.to_dict(orient="records"))
+    json_data = final_df.to_json(orient="records", date_format='iso')
     logger.info("Données converties en JSON")
     return json_data
+
