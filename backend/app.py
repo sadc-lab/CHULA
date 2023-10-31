@@ -1,15 +1,8 @@
-# Importations
 import os
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy import create_engine, text
 import pandas as pd
 from dotenv import load_dotenv
-import json
-import logging
-
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Chargement des variables d'environnement
 load_dotenv()
@@ -19,50 +12,29 @@ USERNAME = os.getenv("SQL_USER")
 PASSWORD = os.getenv("SQL_PASSWORD")
 DATABASE_URL = f"postgresql://{USERNAME}:{PASSWORD}@spxp-app05:5432/cathydb"
 engine = create_engine(DATABASE_URL)
-conn = engine.connect()  # Établissement de la connexion
 
-# Création d'une instance FastAPI
-app = FastAPI()
-from fastapi.middleware.cors import CORSMiddleware
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    html_content = """
+    <html>
+        <head>
+            <title>Bienvenue</title>
+        </head>
+        <body>
+            <h2>Bienvenue sur notre site</h2>
+            <p>Si vous souhaitez exécuter une requête, veuillez cliquer sur le lien ci-dessous.</p>
+            <a href="/execute_query/">Exécuter la requête</a>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Autorise toutes les origines
-    allow_credentials=True,
-    allow_methods=["*"],  # Autorise toutes les méthodes
-    allow_headers=["*"],  # Autorise tous les headers
-)
+@app.post("/execute_query/")
+def execute_sql_query(adm: str):
+    
+    adm_str = ",".join(adm.split(";"))
 
-
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer
-
-app = FastAPI()
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    if token != "votre_token_secret":
-        raise HTTPException(
-            status_code=401,
-            detail="Token invalide",
-        )
-    return token
-
-@app.get("/secure-data")
-async def secure_data(current_user: str = Depends(get_current_user)):
-    return {"message": "Ceci est une donnée sécurisée"}
-
-
-# Route FastAPI pour exécuter la requête SQL
-@app.get("/")
-def execute_sql_query(adm_str: str = Query(..., title="adm_str", description="Patient's admission number")):
-    logger.info("Exécution de la requête SQL pour adm_str: %s", adm_str)
-  #3265868
-#3445344
-    # Requête SQL
-    # sqlcmd2 = f'''SELECT 1;'''
-    sqlcmd = f'''SELECT Patient, 
+    sqlcmd = f"""Select Patient, 
     min(minimumTime) minimumTime,
     percentile_cont(0.5) within group (order by spo2) spo2,
     percentile_cont(0.5) within group (order by resp_rate) resp_rate,
@@ -123,15 +95,12 @@ SELECT l.encounterid AS Patient,
      WHERE p.par IN ('SpO2','Measured Frequency','FC','PEEP Setting','PEEP réglée','PEEP reglee','O2 Concentration measured','O2 Concentration Setting','Mean Airway Pressure','Peak Airway Pressure'
       , 'Mean airway pressure','Tidal Volume Setting','Expiratory Tidal Volume','Inspiratory Time Setting','P0.1 Airway Pressure','CMV frequency Setting','CO2fe','Pression de crête','Inspired O2 (FiO2) Setting','Positive End Expiratory Pressure (PEEP) Setting','Measured Frequency')
       AND p.horodate BETWEEN (NOW()- interval '8 minutes') AND NOW()
-      AND (l.lifetimenumber= ANY(array[{adm_str}]::text[]))
-      GROUP BY l.encounterid, p.horodate, b.horodate
-      ) x
-      GROUP BY Patient, BloodGasTime;'''
-   
-    # Exécution de la requête
-    result = conn.execute(text(sqlcmd), {'adm_str': adm_str})
-    logger.info("Requête SQL exécutée avec succès")
+      AND l.lifetimenumber IN ({adm_str})
+      GROUP BY l.encounterid, p.horodate, b.horodate 
+            ) x
+      GROUP BY Patient, BloodGasTime;")""".replace(",adm,", f"IN ({adm_str})")
 
+    result = engine.execute(text(sqlcmd))
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
     logger.info("Résultats convertis en DataFrame")
 
@@ -147,3 +116,5 @@ SELECT l.encounterid AS Patient,
     return json_data
 
 
+    # Convertir le DataFrame en JSON
+    return final_df.to_dict(orient="records")
