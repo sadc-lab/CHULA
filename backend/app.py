@@ -1,32 +1,67 @@
-#trouver creation StudyID ou faire code anonymisation et ajouter frequence de 5min
+# Importations
 import os
-from fastapi import FastAPI, Depends
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Depends, Query
 from sqlalchemy import create_engine, text
 import pandas as pd
 from dotenv import load_dotenv
 import json
+import logging
 
-# Chargez les variables d'environnement du fichier .env
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Chargement des variables d'environnement
 load_dotenv()
 
-# Créez une instance de FastAPI
-app = FastAPI()
-
+# Configuration de la base de données
 USERNAME = os.getenv("SQL_USER")
 PASSWORD = os.getenv("SQL_PASSWORD")
 DATABASE_URL = f"postgresql://{USERNAME}:{PASSWORD}@spxp-app05:5432/cathydb"
 engine = create_engine(DATABASE_URL)
-conn = engine.connect()  # Créez une connexion
+conn = engine.connect()  # Établissement de la connexion
 
-#EXCEL_PATH = "/home/melvinberto/VsCodeProjects/CHULA/backend/patients_CHLA.xlsx"
+# Création d'une instance FastAPI
+app = FastAPI()
+from fastapi.middleware.cors import CORSMiddleware
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Autorise toutes les origines
+    allow_credentials=True,
+    allow_methods=["*"],  # Autorise toutes les méthodes
+    allow_headers=["*"],  # Autorise tous les headers
+)
+
+
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    if token != "votre_token_secret":
+        raise HTTPException(
+            status_code=401,
+            detail="Token invalide",
+        )
+    return token
+
+@app.get("/secure-data")
+async def secure_data(current_user: str = Depends(get_current_user)):
+    return {"message": "Ceci est une donnée sécurisée"}
+
+
+# Route FastAPI pour exécuter la requête SQL
 @app.get("/")
-def execute_sql_query():
-    #df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
-    adm_str=000000
-
-
+def execute_sql_query(adm_str: str = Query(..., title="adm_str", description="Patient's admission number")):
+    logger.info("Exécution de la requête SQL pour adm_str: %s", adm_str)
+  #3265868
+#3445344
+    # Requête SQL
+    # sqlcmd2 = f'''SELECT 1;'''
     sqlcmd = f'''SELECT Patient, 
     min(minimumTime) minimumTime,
     percentile_cont(0.5) within group (order by spo2) spo2,
@@ -92,9 +127,20 @@ SELECT l.encounterid AS Patient,
       GROUP BY l.encounterid, p.horodate, b.horodate
       ) x
       GROUP BY Patient, BloodGasTime;'''
-
-    result = conn.execute(text(sqlcmd))
+    # Exécution de la requête
+    result = conn.execute(text(sqlcmd), {'adm_str': adm_str})
+    logger.info("Requête SQL exécutée avec succès")
+    
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
+    logger.info("Résultats convertis en DataFrame")
 
+    # Convertir les colonnes Timestamp en chaînes de caractères
+    timestamp_cols = final_df.select_dtypes(include=['datetime64[ns]']).columns
+    for col in timestamp_cols:
+        final_df[col] = final_df[col].dt.strftime('%Y-%m-%d %H:%M:%S').replace('NaT', None)
+    logger.info("Colonnes Timestamp converties en chaînes de caractères")
+
+    # Retourner les données en format JSON
     json_data = json.dumps(final_df.to_dict(orient="records"))
+    logger.info("Données converties en JSON")
     return json_data
