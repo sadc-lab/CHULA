@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 import json
 import logging
 import httpx
+from datetime import datetime
+import pytz
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +57,8 @@ async def secure_data(current_user: str = Depends(get_current_user)):
     return {"message": "Ceci est une donnée sécurisée"}
 
 """
+#
+
 # Route FastAPI pour exécuter la requête SQL
 async def send_data(json_data):
     url = "https://i677xqk5rk.execute-api.us-west-2.amazonaws.com/Prod/api/monitorfeed"
@@ -150,16 +154,24 @@ SELECT l.encounterid AS Patient,
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
     logger.info("Résultats convertis en DataFrame")
 
-    # Convertir les colonnes Timestamp en chaînes de caractères
-    timestamp_cols = final_df.select_dtypes(include=['datetime64[ns]']).columns
+    # Définir le fuseau horaire de Montréal
+    montreal_tz = pytz.timezone('America/Montreal')
+
+    # Convertir les colonnes Timestamp en heure locale de Montréal avec le décalage UTC explicite
+    timestamp_cols = final_df.select_dtypes(include=['datetime64[ns, UTC]']).columns
     for col in timestamp_cols:
-        final_df[col] = final_df[col].dt.strftime('%Y-%m-%d %H:%M:%S').replace('NaT', None)
-    logger.info("Colonnes Timestamp converties en chaînes de caractères")
+        final_df[col] = final_df[col].dt.tz_convert(montreal_tz)
+        final_df[col] = final_df[col].apply(lambda x: x.strftime('%Y-%m-%dT%H:%M:%S UTC%z'))
+
+    # Ajouter un champ de fuseau horaire
+    final_df['timezone'] = 'America/Montreal'
+
+    logger.info("Colonnes Timestamp converties en heure locale de Montréal avec décalage UTC explicite")
 
     # Retourner les données en format JSON
     json_data = final_df.to_json(orient="records", date_format='iso')
     logger.info("Données converties en JSON")
-    #return json_data
+    return json_data
 
     test_json = '[{"patient":"00001","minimumtime":"2023-11-02T14:57:21.863Z","spo2":98.0,"resp_rate":21,"hr":162.0,"peep":7.0,"fio2":0.75,"map_value":12.75,"setvte":40,"vt":42,"inspiratory_time":0.7,"p01":0.9,"pip":18.0,"vent_rate":10,"etco2":58,"abg_ph":7.31,"abg_pco2":54,"abg_hco3":31,"abg_pao2":87,"cbg_ph":7.27,"cbg_pco2":58,"cbg_hco3":30,"vbg_ph":7.21,"vbg_pco2":63,"vbg_hco3":30,"bloodgastime":"2023-11-02T13:03:21Z"}]'
     test_data = json.loads(test_json)
