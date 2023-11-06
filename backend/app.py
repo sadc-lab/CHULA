@@ -6,6 +6,7 @@ import pandas as pd
 from dotenv import load_dotenv
 import json
 import logging
+import httpx
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +25,7 @@ conn = engine.connect()  # Établissement de la connexion
 # Création d'une instance FastAPI
 app = FastAPI()
 from fastapi.middleware.cors import CORSMiddleware
-
+"""
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Autorise toutes les origines
@@ -53,16 +54,30 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 async def secure_data(current_user: str = Depends(get_current_user)):
     return {"message": "Ceci est une donnée sécurisée"}
 
-
+"""
 # Route FastAPI pour exécuter la requête SQL
+async def send_data(json_data):
+    url = "https://i677xqk5rk.execute-api.us-west-2.amazonaws.com/Prod/api/monitorfeed"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Institution": "chsj",
+        # Ajoutez ici d'autres en-têtes nécessaires, comme l'authentification
+    }
+    # Remplacez 'username' et 'password' par vos vraies informations d'authentification
+    auth = httpx.BasicAuth(username="jhotz", password="test")
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=json_data, headers=headers, auth=auth)
+        return response
+
 @app.get("/")
-def execute_sql_query(adm_str: str = Query(..., title="adm_str", description="Patient's admission number")):
+async def execute_sql_query(adm_str: str = Query(..., title="adm_str", description="Patient's admission number")):
     logger.info("Exécution de la requête SQL pour adm_str: %s", adm_str)
   #3265868
 #3445344
     # Requête SQL
     # sqlcmd2 = f'''SELECT 1;'''
-    sqlcmd = f'''SELECT Patient, 
+    sqlcmd = text('''SELECT Patient, 
     min(minimumTime) minimumTime,
     percentile_cont(0.5) within group (order by spo2) spo2,
     percentile_cont(0.5) within group (order by resp_rate) resp_rate,
@@ -123,13 +138,13 @@ SELECT l.encounterid AS Patient,
      WHERE p.par IN ('SpO2','Measured Frequency','FC','PEEP Setting','PEEP réglée','PEEP reglee','O2 Concentration measured','O2 Concentration Setting','Mean Airway Pressure','Peak Airway Pressure'
       , 'Mean airway pressure','Tidal Volume Setting','Expiratory Tidal Volume','Inspiratory Time Setting','P0.1 Airway Pressure','CMV frequency Setting','CO2fe','Pression de crête','Inspired O2 (FiO2) Setting','Positive End Expiratory Pressure (PEEP) Setting','Measured Frequency')
       AND p.horodate BETWEEN (NOW()- interval '8 minutes') AND NOW()
-      AND (l.lifetimenumber= ANY(array[{adm_str}]::text[]))
+      AND l.lifetimenumber = :adm_str
       GROUP BY l.encounterid, p.horodate, b.horodate
       ) x
-      GROUP BY Patient, BloodGasTime;'''
-   
+      GROUP BY Patient, BloodGasTime;''')
+    
     # Exécution de la requête
-    result = conn.execute(text(sqlcmd), {'adm_str': adm_str})
+    result = conn.execute(sqlcmd, {'adm_str': adm_str})
     logger.info("Requête SQL exécutée avec succès")
 
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
@@ -144,5 +159,22 @@ SELECT l.encounterid AS Patient,
     # Retourner les données en format JSON
     json_data = final_df.to_json(orient="records", date_format='iso')
     logger.info("Données converties en JSON")
-    return json_data
+    #return json_data
 
+    test_json = '[{"patient":"00001","minimumtime":"2023-11-02T14:57:21.863Z","spo2":98.0,"resp_rate":21,"hr":162.0,"peep":7.0,"fio2":0.75,"map_value":12.75,"setvte":40,"vt":42,"inspiratory_time":0.7,"p01":0.9,"pip":18.0,"vent_rate":10,"etco2":58,"abg_ph":7.31,"abg_pco2":54,"abg_hco3":31,"abg_pao2":87,"cbg_ph":7.27,"cbg_pco2":58,"cbg_hco3":30,"vbg_ph":7.21,"vbg_pco2":63,"vbg_hco3":30,"bloodgastime":"2023-11-02T13:03:21Z"}]'
+    test_data = json.loads(test_json)
+    
+    send_response = await send_data(test_data)
+    if send_response.status_code == 200:
+        logger.info("Données envoyées avec succès.")
+        # Retourner la réponse de l'API externe
+        return send_response.json()
+    else:
+        logger.error(f"Échec de l'envoi des données : {send_response.status_code}")
+        # Retourner un message d'erreur ou le JSON de test
+        return {"error": "Failed to send data"}
+    
+
+
+
+    
