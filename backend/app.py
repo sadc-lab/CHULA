@@ -171,7 +171,7 @@ SELECT l.encounterid AS Patient,
     # Retourner les données en format JSON
     json_data = final_df.to_json(orient="records", date_format='iso')
     logger.info("Données converties en JSON")
-    return json_data
+    #return json_data
 
     test_json = '[{"patient":"00001","minimumtime":"2023-11-02T14:57:21.863Z","spo2":98.0,"resp_rate":21,"hr":162.0,"peep":7.0,"fio2":0.75,"map_value":12.75,"setvte":40,"vt":42,"inspiratory_time":0.7,"p01":0.9,"pip":18.0,"vent_rate":10,"etco2":58,"abg_ph":7.31,"abg_pco2":54,"abg_hco3":31,"abg_pao2":87,"cbg_ph":7.27,"cbg_pco2":58,"cbg_hco3":30,"vbg_ph":7.21,"vbg_pco2":63,"vbg_hco3":30,"bloodgastime":"2023-11-02T13:03:21Z"}]'
     test_data = json.loads(test_json)
