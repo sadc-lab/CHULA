@@ -1,4 +1,3 @@
-# Importations
 import os
 from fastapi import FastAPI, Depends, Query, HTTPException
 from sqlalchemy import create_engine, text
@@ -6,10 +5,6 @@ import pandas as pd
 from dotenv import load_dotenv
 import json
 import logging
-import httpx
-from datetime import datetime
-import pytz
-import asyncio
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -27,30 +22,46 @@ conn = engine.connect()  # Établissement de la connexion
 
 # Création d'une instance FastAPI
 app = FastAPI()
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Autorise toutes les origines
+    allow_credentials=True,
+    allow_methods=["*"],  # Autorise toutes les méthodes
+    allow_headers=["*"],  # Autorise tous les headers
+)
+
+
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+
+app = FastAPI()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    if token != "votre_token_secret":
+        raise HTTPException(
+            status_code=401,
+            detail="Token invalide",
+        )
+    return token
+
+@app.get("/secure-data")
+async def secure_data(current_user: str = Depends(get_current_user)):
+    return {"message": "Ceci est une donnée sécurisée"}
+
 
 # Route FastAPI pour exécuter la requête SQL
-async def send_data(json_data):
-    url = "https://i677xqk5rk.execute-api.us-west-2.amazonaws.com/Prod/api/monitorfeed"
-    headers = {
-        "Content-Type": "application/json",
-        "X-Institution": "chsj",
-        # Ajoutez ici d'autres en-têtes nécessaires, comme l'authentification
-    }
-    # Remplacez 'username' et 'password' par vos vraies informations d'authentification
-    auth = httpx.BasicAuth(username="jhotz", password="test")
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=json_data, headers=headers, auth=auth)
-        return response
-
 @app.get("/")
-async def execute_sql_query(adm_str: str = Query(..., title="adm_str", description="Patient's admission number")):
+def execute_sql_query(adm_str: str = Query(..., title="adm_str", description="Patient's admission number")):
     logger.info("Exécution de la requête SQL pour adm_str: %s", adm_str)
   #3265868
 #3445344
     # Requête SQL
     # sqlcmd2 = f'''SELECT 1;'''
-    sqlcmd = text('''SELECT Patient, 
+    sqlcmd = f'''SELECT Patient, 
     min(minimumTime) minimumTime,
     percentile_cont(0.5) within group (order by spo2) spo2,
     percentile_cont(0.5) within group (order by resp_rate) resp_rate,
@@ -110,17 +121,16 @@ SELECT l.encounterid AS Patient,
       INNER JOIN D_Encounter l ON l.encounterid=p.noadmsip
      WHERE p.par IN ('SpO2','FR','FC','PEEP Setting','PEEP réglée','PEEP reglee','O2 Concentration measured','O2 Concentration Setting','Mean Airway Pressure','Peak Airway Pressure'
       , 'Mean airway pressure','Tidal Volume Setting','Expiratory Tidal Volume','Inspiratory Time Setting','P0.1 Airway Pressure','CMV frequency Setting','CO2fe','Pression de crête','Inspired O2 (FiO2) Setting','Positive End Expiratory Pressure (PEEP) Setting','Measured Frequency')
-      AND p.horodate BETWEEN (NOW()- interval '5 minutes') AND NOW()
-      AND l.lifetimenumber = :adm_str
+      AND p.horodate BETWEEN (NOW()- interval '8 minutes') AND NOW()
+      AND (l.lifetimenumber= ANY(array[{adm_str}]::text[]))
       GROUP BY l.encounterid, p.horodate, b.horodate
       ) x
-      GROUP BY Patient, BloodGasTime;''')
-    
-    # Exécution de la requête SQL
-    result = conn.execute(sqlcmd, {'adm_str': adm_str})
+      GROUP BY Patient, BloodGasTime;'''
+   
+    # Exécution de la requête
+    result = conn.execute(text(sqlcmd), {'adm_str': adm_str})
     logger.info("Requête SQL exécutée avec succès")
 
-    # Conversion des résultats en DataFrame
     final_df = pd.DataFrame(result.fetchall(), columns=result.keys())
     logger.info("Résultats convertis en DataFrame")
     
@@ -155,46 +165,3 @@ SELECT l.encounterid AS Patient,
 
     return json_data
 
-
-    # JSON de test
-    test_json = '''
-    [
-        {
-            "studyID": "00000",
-            "minimumTime": "2023-11-02T14:57:21.863Z",
-            "etco2": 58,
-            "fio2": 0.75,
-            "hr": 162.0,
-            "map_value": 12.75,
-            "mve": 882,
-            "peep": 7.0,
-            "pip": 18.0,
-            "rr": 21,
-            "spo2": 98.0,
-            "vt": 42,
-            "BloodGasTime": "2023-11-02T13:03:21Z",
-            "vbg_be": "",
-            "vbg_o2sat": "",
-            "vbg_pco2": 63,
-            "vbg_ph": 7.21,
-            "vbg_po2": ""
-        }
-    ]
-    '''
-
-    # Chargement du JSON de test
-    test_data = json.loads(test_json)
-
-    # Envoi des données
-    logger.info("Préparation à l'envoi des données")
-    send_response = await send_data(test_data)
-    logger.info("Tentative d'envoi des données effectuée")
-
-    if send_response.status_code == 200:
-        logger.info("Données envoyées avec succès.")
-        # Retour de la réponse de l'API externe
-        return send_response.json()
-    else:
-        logger.error(f"Échec de l'envoi des données : {send_response.status_code}")
-        # Retour d'un message d'erreur
-        return {"error": "Failed to send data"}
