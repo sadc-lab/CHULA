@@ -41,9 +41,11 @@ async def send_data(json_data):
         # prêt à envoyer les données réelles, décommentez la ligne ci-dessous
         # response = await client.post(url, json=json_data, headers=headers, auth=auth)
         # return response
+        logger.info("Envoi JSON effectue pour adm_str: %s", adm_str)
 
         #cette ligne simule une réponse réussie sans envoyer de données
         return {"status": "success", "message": "Simulation d'envoi réussie"}
+
 
 def enregistrer_historique(numero_dossier, study_id, date_heure):
     with open("historique_envois.txt", "a") as fichier:
