@@ -13,6 +13,7 @@ import asyncio
 from pytz import timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi.responses import HTMLResponse
+from io import StringIO
 
 
 # Configuration du logging
@@ -37,14 +38,16 @@ async def send_data(json_data):
     headers = {"Content-Type": "application/json", "X-Institution": "chsj"}
     auth = httpx.BasicAuth(username="jhotz", password="test")
     
-    async with httpx.AsyncClient() as client:
-        # prêt à envoyer les données réelles, décommentez la ligne ci-dessous
-        # response = await client.post(url, json=json_data, headers=headers, auth=auth)
-        # return response
-        logger.info("Envoi JSON effectue pour adm_str: %s", adm_str)
-
-        #cette ligne simule une réponse réussie sans envoyer de données
-        return {"status": "success", "message": "Simulation d'envoi réussie"}
+    async with httpx.AsyncClient() as client:"""
+        logger.info("JSON à envoyer : %s", json_data)
+        response = await client.post(url, json=json_data, headers=headers, auth=auth)
+        if response.status_code == 200:
+            logger.info("Envoi JSON effectué avec succès")
+            return response.json()  # Retourne le contenu JSON de la réponse
+        else:
+            logger.error("Erreur lors de l'envoi du JSON: %s", response.text)
+            return {"status": "error", "message": "Échec de l'envoi"}"""
+    return {"status": "success", "message": "Simulation d'envoi réussie"}
 
 
 def enregistrer_historique(numero_dossier, study_id, date_heure):
@@ -181,11 +184,12 @@ dossiers_en_cours = []
 
 
 # Fonction pour traiter les données après la récupération de la base de données
+
 async def process_data(adm_str, study_id):
     json_data = await execute_sql_query(adm_str=str(adm_str), study_id=study_id)
 
     # Convertir les données JSON en DataFrame pour un traitement plus facile
-    data_df = pd.read_json(json_data)
+    data_df = pd.read_json(StringIO(json_data))
 
     # Trier le DataFrame par studyID et par BloodGasTime en ordre décroissant
     data_df.sort_values(by=['studyID', 'BloodGasTime'], ascending=[True, False], inplace=True)
